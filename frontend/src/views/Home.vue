@@ -388,8 +388,18 @@ const fetchRankData = async (categoryId, page = 1, append = false) => {
   }
   
   try {
-    const response = await fetch(`${API_BASE}/api/rank/${category.apiId}?page=${page}`)
+    const url = `${API_BASE}/api/rank/${category.apiId}?page=${page}`
+    console.log('正在请求:', url)
+    
+    const response = await fetch(url)
+    console.log('响应状态:', response.status)
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
     const result = await response.json()
+    console.log('响应数据:', result)
     
     if (result.success && result.data) {
       const newSongs = result.data.songs || []
@@ -409,9 +419,16 @@ const fetchRankData = async (categoryId, page = 1, append = false) => {
         currentPage.value = page
         hasMore.value = newSongs.length >= 10 // 假设每页10条
       }
+      
+      if (newSongs.length > 0) {
+        showToast(`加载成功：${newSongs.length} 首歌曲`)
+      }
+    } else {
+      throw new Error(result.error || '数据格式错误')
     }
   } catch (error) {
     console.error('获取榜单数据失败:', error)
+    showToast(`加载失败: ${error.message}`)
     if (!append) {
       rankSongs.value = []
     }
