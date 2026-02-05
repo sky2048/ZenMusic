@@ -1,0 +1,8 @@
+{
+  "appId": "com.zenmusic.app",
+  "appName": "ZenMusic",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,38 @@
+:root {
+  --primary: #CCFF00;
+  --bg-dark: #000000;
+  --bg-gray: #121212;
+  --text-primary: #ffffff;
+  --text-secondary: #888888;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+}
+
+button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 2px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-secondary);
+  border-radius: 2px;
+}

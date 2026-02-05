@@ -1,0 +1,18 @@
+node_modules
+dist
+.DS_Store
+*.log
+.vscode
+.idea
+frontend/node_modules
+frontend/dist
+backend/node_modules
+backend/dist
+
+# Android
+frontend/android/
+*.keystore
+*.jks
+
+# Capacitor
+frontend/.capacitor

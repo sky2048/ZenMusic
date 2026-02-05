@@ -1,0 +1,11 @@
+name = "music-crawler"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Workers 配置
+workers_dev = true
+
+# 路由配置（部署后可以绑定自定义域名）
+# routes = [
+#   { pattern = "api.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]

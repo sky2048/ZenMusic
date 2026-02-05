@@ -1,0 +1,465 @@
+// Cloudflare Workers 爬虫服务
+
+const BASE_URL = 'https://www.gequhai.com';
+
+// 榜单分类配置
+const RANK_CATEGORIES = [
+  { id: 'hot-music', name: '热门榜', url: '/hot-music/' },
+  { id: 'surge', name: '飙升榜', url: '/top/surge' },
+  { id: 'new', name: '新歌榜', url: '/top/new' },
+  { id: 'douyin', name: '抖音榜', url: '/top/douyin' },
+  { id: 'jingdian', name: '怀旧榜', url: '/top/jingdian' },
+  { id: 'dianyin', name: '电音榜', url: '/top/dianyin' },
+  { id: 'wwdj', name: 'DJ榜', url: '/top/wwdj' }
+];
+
+// HTML解析辅助类
+class HTMLParser {
+  constructor(html) {
+    this.html = html;
+  }
+
+  // 简单的HTML解析，提取表格数据
+  parseRankList() {
+    const songs = [];
+    
+    // 匹配所有表格行
+    const trRegex = /<tr>([\s\S]*?)<\/tr>/g;
+    const matches = [...this.html.matchAll(trRegex)];
+    
+    for (const match of matches) {
+      const trContent = match[1];
+      
+      // 跳过表头
+      if (trContent.includes('<th')) continue;
+      
+      // 提取td内容
+      const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
+      const tds = [...trContent.matchAll(tdRegex)];
+      
+      if (tds.length >= 4) {
+        // 排名
+        const rankText = tds[0][1].replace(/<[^>]*>/g, '').trim();
+        
+        // 封面
+        const imgMatch = tds[1][1].match(/src="([^"]+)"/);
+        const cover = imgMatch ? imgMatch[1] : '';
+        
+        // 歌名和链接
+        const linkMatch = tds[2][1].match(/<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+        const songUrl = linkMatch ? linkMatch[1] : '';
+        const songName = linkMatch ? linkMatch[2].trim() : '';
+        const songId = songUrl ? songUrl.split('/').pop() : '';
+        
+        // 歌手
+        const artist = tds[3][1].replace(/<[^>]*>/g, '').trim();
+        
+        if (songName && artist) {
+          songs.push({
+            rank: parseInt(rankText) || 0,
+            id: songId,
+            name: songName,
+            artist: artist,
+            cover: cover,
+            url: songUrl ? `${BASE_URL}${songUrl}` : ''
+          });
+        }
+      }
+    }
+    
+    return songs;
+  }
+
+  // 提取总数
+  parseTotal() {
+    const match = this.html.match(/共(\d+)条/);
+    return match ? parseInt(match[1]) : 100;
+  }
+}
+
+// 获取单页榜单
+async function fetchRankPage(category, page) {
+  const url = page === 1 
+    ? `${BASE_URL}${category.url}` 
+    : `${BASE_URL}${category.url}?page=${page}`;
+
+  // 随机User-Agent
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+  ];
+  
+  const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': randomUA,
+        'Referer': BASE_URL,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Cache-Control': 'max-age=0'
+      },
+      cf: {
+        cacheTtl: 300,
+        cacheEverything: true
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const html = await response.text();
+    
+    // 检查是否被反爬
+    if (html.length < 1000 || !html.includes('table')) {
+      throw new Error('可能被反爬，返回内容异常');
+    }
+    
+    const parser = new HTMLParser(html);
+    const songs = parser.parseRankList();
+    
+    if (songs.length === 0) {
+      throw new Error('未解析到数据');
+    }
+    
+    return {
+      songs,
+      total: parser.parseTotal()
+    };
+  } catch (error) {
+    console.error(`爬取失败 [${url}]:`, error.message);
+    throw error;
+  }
+}
+
+// 获取真实音频URL
+async function getRealMusicUrl(playId) {
+  const url = `${BASE_URL}/api/music`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': `${BASE_URL}/play/`,
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Custom-Header': 'SecretKey',
+        'Origin': BASE_URL
+      },
+      body: `id=${playId}&type=0`
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.code === 200 && data.data && data.data.url) {
+      return data.data.url;
+    }
+    
+    throw new Error(data.msg || '获取音频URL失败');
+  } catch (error) {
+    console.error(`获取音频URL失败 [${playId}]:`, error.message);
+    throw error;
+  }
+}
+
+// 获取歌曲详情（播放地址和歌词）
+async function getSongDetail(songId) {
+  const url = `${BASE_URL}/play/${songId}`;
+
+  const randomUA = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  ][Math.floor(Math.random() * 2)];
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': randomUA,
+        'Referer': BASE_URL,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // 提取关键信息
+    const playIdMatch = html.match(/window\.play_id\s*=\s*['"]([^'"]+)['"]/);
+    const titleMatch = html.match(/window\.mp3_title\s*=\s*['"]([^'"]+)['"]/);
+    const authorMatch = html.match(/window\.mp3_author\s*=\s*['"]([^'"]+)['"]/);
+    const coverMatch = html.match(/window\.mp3_cover\s*=\s*['"]([^'"]+)['"]/);
+    
+    // 提取LRC歌词
+    const lrcMatch = html.match(/<div[^>]*id="content-lrc2"[^>]*>([\s\S]*?)<\/div>/);
+    let lyrics = '';
+    if (lrcMatch) {
+      lyrics = lrcMatch[1]
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+    }
+
+    if (!playIdMatch) {
+      throw new Error('无法获取播放ID');
+    }
+
+    const playId = playIdMatch[1];
+    
+    // 获取真实音频URL
+    let realMusicUrl = '';
+    try {
+      realMusicUrl = await getRealMusicUrl(playId);
+    } catch (e) {
+      console.error('获取真实音频URL失败:', e);
+    }
+
+    return {
+      id: songId,
+      title: titleMatch ? titleMatch[1] : '',
+      artist: authorMatch ? authorMatch[1] : '',
+      cover: coverMatch ? coverMatch[1] : '',
+      playId: playId,
+      musicUrl: realMusicUrl,  // 直接返回真实URL
+      lyrics: lyrics
+    };
+  } catch (error) {
+    console.error(`获取歌曲详情失败 [${songId}]:`, error.message);
+    throw error;
+  }
+}
+
+// 搜索歌曲
+async function searchSongs(keyword) {
+  const url = `${BASE_URL}/s/${encodeURIComponent(keyword)}`;
+
+  const randomUA = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  ][Math.floor(Math.random() * 2)];
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': randomUA,
+        'Referer': BASE_URL,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    
+    if (html.length < 1000 || !html.includes('table')) {
+      throw new Error('搜索结果异常');
+    }
+    
+    const parser = new HTMLParser(html);
+    const songs = parser.parseRankList();
+    
+    return {
+      keyword: keyword,
+      songs: songs,
+      total: songs.length
+    };
+  } catch (error) {
+    console.error(`搜索失败 [${keyword}]:`, error.message);
+    throw error;
+  }
+}
+
+// 搜索歌曲
+async function searchSongs(keyword) {
+  const url = `${BASE_URL}/s/${encodeURIComponent(keyword)}`;
+
+  const randomUA = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  ][Math.floor(Math.random() * 2)];
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': randomUA,
+        'Referer': BASE_URL,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    
+    if (html.length < 1000 || !html.includes('table')) {
+      throw new Error('搜索结果异常');
+    }
+    
+    const parser = new HTMLParser(html);
+    const songs = parser.parseRankList();
+    
+    return {
+      keyword: keyword,
+      songs: songs,
+      total: songs.length
+    };
+  } catch (error) {
+    console.error(`搜索失败 [${keyword}]:`, error.message);
+    throw error;
+  }
+}
+
+// 获取单页榜单（支持分页）
+async function getRankList(rankType, page = 1) {
+  const category = RANK_CATEGORIES.find(c => c.id === rankType);
+  if (!category) {
+    throw new Error('Invalid rank type');
+  }
+
+  const result = await fetchRankPage(category, page);
+  
+  return {
+    songs: result.songs,
+    pagination: {
+      current: page,
+      pageSize: 10,
+      total: result.total,
+      totalPages: Math.ceil(result.total / 10),
+      hasMore: page < Math.ceil(result.total / 10)
+    }
+  };
+}
+
+// 处理CORS
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json;charset=UTF-8'
+  };
+}
+
+// 主处理函数
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    
+    // 处理OPTIONS预检请求
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders() });
+    }
+
+    try {
+      // 路由：获取榜单分类
+      if (url.pathname === '/api/rank/categories') {
+        return new Response(
+          JSON.stringify({ success: true, data: RANK_CATEGORIES }),
+          { headers: corsHeaders() }
+        );
+      }
+
+      // 路由：搜索歌曲
+      const searchMatch = url.pathname.match(/^\/api\/search$/);
+      if (searchMatch) {
+        const keyword = url.searchParams.get('keyword') || url.searchParams.get('q');
+        if (!keyword) {
+          return new Response(
+            JSON.stringify({ success: false, error: '请提供搜索关键词' }),
+            { status: 400, headers: corsHeaders() }
+          );
+        }
+        
+        const data = await searchSongs(keyword);
+        
+        return new Response(
+          JSON.stringify({ success: true, data }),
+          { headers: corsHeaders() }
+        );
+      }
+
+      // 路由：搜索歌曲
+      const searchMatch = url.pathname.match(/^\/api\/search$/);
+      if (searchMatch) {
+        const keyword = url.searchParams.get('keyword') || url.searchParams.get('q');
+        if (!keyword) {
+          return new Response(
+            JSON.stringify({ success: false, error: '请提供搜索关键词' }),
+            { status: 400, headers: corsHeaders() }
+          );
+        }
+        
+        const data = await searchSongs(keyword);
+        
+        return new Response(
+          JSON.stringify({ success: true, data }),
+          { headers: corsHeaders() }
+        );
+      }
+
+      // 路由：获取歌曲详情
+      const detailMatch = url.pathname.match(/^\/api\/song\/([^\/]+)$/);
+      if (detailMatch) {
+        const songId = detailMatch[1];
+        
+        const data = await getSongDetail(songId);
+        
+        return new Response(
+          JSON.stringify({ success: true, data }),
+          { headers: corsHeaders() }
+        );
+      }
+
+      // 路由：获取榜单列表（支持分页）
+      const rankMatch = url.pathname.match(/^\/api\/rank\/([^\/]+)$/);
+      if (rankMatch) {
+        const rankType = rankMatch[1];
+        const page = parseInt(url.searchParams.get('page') || '1');
+        
+        const data = await getRankList(rankType, page);
+        
+        return new Response(
+          JSON.stringify({ success: true, data }),
+          { headers: corsHeaders() }
+        );
+      }
+
+      // 404
+      return new Response(
+        JSON.stringify({ success: false, error: 'Not found' }),
+        { status: 404, headers: corsHeaders() }
+      );
+
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ success: false, error: error.message }),
+        { status: 500, headers: corsHeaders() }
+      );
+    }
+  }
+};
