@@ -1,41 +1,59 @@
-# Android 网络问题修复
+# Android 网络问题修复指南
 
-## 问题描述
+## 问题：Android 应用显示"加载中..."但没有数据
 
-Android APK 安装后显示"加载中..."，但无法加载音乐数据。
+### 原因
+Android 应用需要特殊配置才能访问网络 API：
+1. 需要网络权限
+2. 需要配置网络安全策略
+3. 需要允许 HTTPS 请求
 
-## 根本原因
+---
 
-经过搜索和分析，发现问题是：
+## 🚀 快速修复（推荐）
 
-1. **Capacitor Android 应用的 origin 是 `capacitor://localhost`**，而不是普通的 `http://` 或 `https://`
-2. **原生 fetch API 在 Android WebView 中可能受到限制**
-3. **CORS 和网络安全策略问题**
+### 方法一：自动配置脚本
 
-## 解决方案
+```bash
+cd frontend
 
-### 1. 启用 CapacitorHttp 插件
+# Linux/Mac
+bash configure-android.sh
 
-在 `frontend/capacitor.config.json` 中添加：
+# Windows
+configure-android.bat
 
-```json
-{
-  "plugins": {
-    "CapacitorHttp": {
-      "enabled": true
-    }
-  }
-}
+# 然后同步
+npx cap sync android
 ```
 
-**作用：** 
-- 自动将 `fetch` 和 `XMLHttpRequest` 替换为原生网络库
-- 绕过 WebView 的限制
-- 解决 CORS 问题
+### 方法二：手动配置
 
-### 2. 添加网络安全配置
+#### 1. 添加网络权限
 
-创建 `frontend/android/app/src/main/res/xml/network_security_config.xml`：
+编辑 `frontend/android/app/src/main/AndroidManifest.xml`
+
+在 `<manifest>` 标签内添加（在 `<application>` 之前）：
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+```
+
+#### 2. 配置网络安全策略
+
+在 `<application>` 标签添加属性：
+
+```xml
+<application
+    android:networkSecurityConfig="@xml/network_security_config"
+    android:usesCleartextTraffic="true"
+    ...其他属性>
+```
+
+#### 3. 创建网络安全配置文件
+
+创建文件：`frontend/android/app/src/main/res/xml/network_security_config.xml`
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -46,125 +64,270 @@ Android APK 安装后显示"加载中..."，但无法加载音乐数据。
             <certificates src="user" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">music-crawler.sky70old.workers.dev</domain>
+        <domain includeSubdomains="true">www.gequhai.com</domain>
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
 </network-security-config>
 ```
 
-更新 `AndroidManifest.xml`：
-
-```xml
-<application
-    ...
-    android:usesCleartextTraffic="true"
-    android:networkSecurityConfig="@xml/network_security_config">
-```
-
-**作用：**
-- 允许 HTTP 和 HTTPS 混合内容
-- 信任系统和用户证书
-- 解决 Android 9+ 的网络安全限制
-
-## 技术细节
-
-### Capacitor Http 插件
-
-- **内置于 @capacitor/core**，无需额外安装
-- 默认禁用，需要手动启用
-- 启用后会自动 patch `fetch` 和 `XMLHttpRequest`
-- 使用原生网络库（Android 的 OkHttp）
-
-### 为什么需要这个？
-
-根据 [Capacitor 文档](https://capacitorjs.com/docs/apis/http) 和社区讨论：
-
-1. **WebView 限制**：Android WebView 对网络请求有严格限制
-2. **CORS 问题**：来自 `capacitor://localhost` 的请求可能被服务器拒绝
-3. **性能优化**：原生网络库比 WebView 的 fetch 更高效
-
-### 参考资料
-
-- [Capacitor Http API 文档](https://capacitorjs.com/docs/apis/http)
-- [Stack Overflow: Capacitor Android fails to fetch from api](https://stackoverflow.com/questions/67576100/capacitor-android-fails-to-fetch-from-api)
-- [Ionic Forum: Fetch not working on Android](https://forum.ionicframework.com/t/fetch-not-working-on-android/208108)
-- [How to make API calls in Ionic Capacitor Apps](https://enappd.com/blog/how-to-make-api-calls-in-ionic-capacitor-apps/179/)
-
-## 测试步骤
-
-1. **等待 GitHub Actions 构建完成**（约 5-10 分钟）
-2. **下载新的 APK**
-3. **安装到 Android 设备**
-4. **打开应用**
-5. **验证数据加载**
-
-## 预期结果
-
-- ✅ 应用启动后自动加载热门榜数据
-- ✅ 可以切换不同榜单
-- ✅ 搜索功能正常
-- ✅ 可以试听和添加歌曲
-
-## 如果还是不行
-
-### 检查清单
-
-1. **后端是否正常**
-   ```bash
-   curl https://music-crawler.sky70old.workers.dev/api/rank/hot-music
-   ```
-   应该返回 JSON 数据
-
-2. **查看 Android 日志**
-   ```bash
-   adb logcat | grep -i capacitor
-   ```
-
-3. **检查网络权限**
-   确认 `AndroidManifest.xml` 包含：
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET" />
-   ```
-
-4. **清除应用数据**
-   - 设置 → 应用 → ZenMusic → 存储 → 清除数据
-   - 重新打开应用
-
-## 其他可能的解决方案
-
-如果上述方案不行，可以尝试：
-
-### 方案 A：使用 Capacitor Community Http 插件
+#### 4. 同步并重新构建
 
 ```bash
-npm install @capacitor-community/http
+cd frontend
+npx cap sync android
+npx cap open android
 ```
 
-### 方案 B：修改后端 CORS 配置
+在 Android Studio 中重新构建 APK。
 
-在后端添加更宽松的 CORS 头：
+---
 
-```javascript
-'Access-Control-Allow-Origin': '*',
-'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-'Access-Control-Allow-Headers': '*'
+## 📋 完整的 AndroidManifest.xml 示例
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 网络权限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+</manifest>
 ```
 
-### 方案 C：使用代理
+---
 
-在 Capacitor 配置中添加代理：
+## 🔍 验证配置
+
+### 1. 检查权限
+
+```bash
+cd frontend/android
+grep -r "INTERNET" app/src/main/AndroidManifest.xml
+```
+
+应该看到：
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+### 2. 检查网络安全配置
+
+```bash
+ls -la app/src/main/res/xml/network_security_config.xml
+```
+
+文件应该存在。
+
+### 3. 检查 Capacitor 配置
+
+查看 `frontend/capacitor.config.json`：
 
 ```json
 {
+  "appId": "com.zenmusic.app",
+  "appName": "ZenMusic",
+  "webDir": "dist",
   "server": {
-    "url": "http://your-proxy-server.com",
-    "cleartext": true
+    "androidScheme": "https",
+    "allowNavigation": [
+      "https://music-crawler.sky70old.workers.dev",
+      "https://*.workers.dev",
+      "https://www.gequhai.com"
+    ]
+  },
+  "android": {
+    "allowMixedContent": true
   }
 }
 ```
 
-## 总结
+---
 
-通过启用 CapacitorHttp 插件和配置网络安全策略，应该能解决 Android 应用无法加载数据的问题。这是 Capacitor 应用的标准做法，用于绕过 WebView 的网络限制。
+## 🐛 调试步骤
+
+### 1. 使用 Chrome 远程调试
+
+1. 在 Android 设备上打开应用
+2. 在电脑上打开 Chrome 浏览器
+3. 访问 `chrome://inspect`
+4. 找到你的应用，点击 "inspect"
+5. 查看 Console 中的错误信息
+
+### 2. 查看 Logcat
+
+在 Android Studio 中：
+1. 打开 Logcat 窗口
+2. 过滤 "Capacitor" 或 "WebView"
+3. 查看网络请求错误
+
+### 3. 测试网络连接
+
+在应用中添加测试代码（临时）：
+
+```javascript
+// 在 Home.vue 的 onMounted 中添加
+console.log('测试网络连接...')
+fetch('https://music-crawler.sky70old.workers.dev/api/rank/categories')
+  .then(res => res.json())
+  .then(data => console.log('网络正常:', data))
+  .catch(err => console.error('网络错误:', err))
+```
 
 ---
 
-**更新时间：** 2026-02-06  
-**状态：** 已推送到 GitHub，等待构建
+## ⚠️ 常见错误
+
+### 错误 1: net::ERR_CLEARTEXT_NOT_PERMITTED
+
+**原因：** Android 9+ 默认不允许明文 HTTP 流量
+
+**解决：** 
+- 确保添加了 `android:usesCleartextTraffic="true"`
+- 确保配置了 `network_security_config.xml`
+
+### 错误 2: net::ERR_CONNECTION_REFUSED
+
+**原因：** 无法连接到服务器
+
+**解决：**
+- 检查设备网络连接
+- 确认后端 API 地址正确
+- 测试在浏览器中能否访问 API
+
+### 错误 3: CORS 错误
+
+**原因：** 跨域请求被阻止
+
+**解决：**
+- Capacitor 应用不受 CORS 限制
+- 如果看到 CORS 错误，可能是其他配置问题
+
+### 错误 4: 权限被拒绝
+
+**原因：** 没有网络权限
+
+**解决：**
+- 确保 AndroidManifest.xml 中有 INTERNET 权限
+- 重新安装应用
+
+---
+
+## 📱 重新构建步骤
+
+修改配置后，必须重新构建：
+
+```bash
+cd frontend
+
+# 1. 清理旧的构建
+rm -rf android
+
+# 2. 重新添加 Android 平台
+npx cap add android
+
+# 3. 运行配置脚本
+bash configure-android.sh  # 或 configure-android.bat
+
+# 4. 同步
+npx cap sync android
+
+# 5. 构建
+cd android
+./gradlew assembleDebug
+
+# 或在 Android Studio 中构建
+```
+
+---
+
+## ✅ 验证修复
+
+修复后，应用应该能够：
+
+1. ✅ 显示热门榜数据
+2. ✅ 切换不同榜单
+3. ✅ 搜索歌曲
+4. ✅ 试听音乐
+5. ✅ 添加到播放列表
+
+---
+
+## 🔄 GitHub Actions 自动配置
+
+如果使用 GitHub Actions 构建，需要在工作流中添加配置步骤：
+
+```yaml
+- name: Configure Android Network
+  working-directory: frontend
+  run: |
+    bash configure-android.sh
+    npx cap sync android
+```
+
+---
+
+## 📚 相关文档
+
+- [Android 网络安全配置](https://developer.android.com/training/articles/security-config)
+- [Capacitor Android 配置](https://capacitorjs.com/docs/android/configuration)
+- [Android 权限](https://developer.android.com/guide/topics/permissions/overview)
+
+---
+
+## 🆘 还是不行？
+
+1. 检查后端 API 是否正常：
+   ```bash
+   curl https://music-crawler.sky70old.workers.dev/api/rank/categories
+   ```
+
+2. 确认设备网络连接正常
+
+3. 查看 Chrome 远程调试的 Console 错误
+
+4. 检查 Android Studio 的 Logcat 日志
+
+5. 尝试在浏览器中打开应用测试（`npm run dev`）
+
+---
+
+**修复后记得重新构建并安装 APK！** 🎉

@@ -47,13 +47,24 @@ npm run dev
 bash test-build.sh  # Linux/Mac
 test-build.bat      # Windows
 
-# 手动构建
+# 配置 Android 网络权限（重要！）
 cd frontend
+bash configure-android.sh  # Linux/Mac
+configure-android.bat      # Windows
+
+# 手动构建
 npm install
 npm run build
 npx cap add android
+npx cap sync android
 npx cap open android  # 在 Android Studio 中构建
 ```
+
+#### ⚠️ Android 无数据问题
+
+如果应用显示"加载中..."但没有数据，请查看：
+- [快速修复指南](./NETWORK-FIX-QUICK.md) ⭐
+- [详细修复指南](./ANDROID-FIX.md)
 
 ### 后端开发
 

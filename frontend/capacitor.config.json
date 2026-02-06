@@ -3,6 +3,14 @@
   "appName": "ZenMusic",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "allowNavigation": [
+      "https://music-crawler.sky70old.workers.dev",
+      "https://*.workers.dev",
+      "https://www.gequhai.com"
+    ]
+  },
+  "android": {
+    "allowMixedContent": true
   }
 }
