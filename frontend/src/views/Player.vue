@@ -170,7 +170,7 @@ const handleProgressClick = (e) => {
 }
 
 const formatTime = (seconds) => {
-  if (!seconds || isNaN(seconds)) return '0:00'
+  if (!seconds || isNaN(seconds) || seconds === 0) return '0:00'
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${mins}:${secs.toString().padStart(2, '0')}`
@@ -560,6 +560,7 @@ const currentLyric = computed(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 24px;
+  gap: 12px;
   transition: background 0.2s;
 }
 
@@ -577,10 +578,13 @@ const currentLyric = computed(() => {
   align-items: center;
   gap: 16px;
   cursor: pointer;
+  min-width: 0; /* 允许子元素收缩 */
+  overflow: hidden;
 }
 
 .playlist-index {
   width: 24px;
+  flex-shrink: 0;
   text-align: center;
   font-size: 14px;
   color: var(--text-secondary);
@@ -588,6 +592,7 @@ const currentLyric = computed(() => {
 
 .playlist-song-info {
   flex: 1;
+  min-width: 0; /* 允许文本截断 */
   overflow: hidden;
 }
 
@@ -611,6 +616,7 @@ const currentLyric = computed(() => {
 .playlist-delete {
   width: 32px;
   height: 32px;
+  flex-shrink: 0; /* 防止删除按钮被压缩 */
   display: flex;
   align-items: center;
   justify-content: center;

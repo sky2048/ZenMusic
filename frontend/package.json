@@ -1,6 +1,6 @@
 {
   "name": "zenmusic",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "极简本地音乐播放器",
   "type": "module",
   "scripts": {

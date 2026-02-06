@@ -9,7 +9,7 @@
         <h3 class="section-title">功能</h3>
         <div class="setting-item" @click="showTimerModal = true">
           <div class="setting-info">
-            <div class="setting-label">定时关闭</div>
+            <div class="setting-label">定时暂停</div>
             <div class="setting-desc" v-if="timerRemaining > 0">
               剩余 {{ formatTimerRemaining() }}
             </div>
@@ -26,15 +26,22 @@
         <h3 class="section-title">存储</h3>
         <div class="setting-item">
           <div class="setting-info">
-            <div class="setting-label">已存储歌曲</div>
-            <div class="setting-value">{{ songs.length }} 首</div>
+            <div class="setting-label">播放列表</div>
+            <div class="setting-value">{{ playlist.length }} 首</div>
           </div>
         </div>
         <div class="setting-item">
           <div class="setting-info">
-            <div class="setting-label">存储位置</div>
-            <div class="setting-desc storage-path">IndexedDB (浏览器本地存储)</div>
+            <div class="setting-label">已缓存歌曲</div>
+            <div class="setting-value">{{ cachedSongsCount }} 首</div>
           </div>
+        </div>
+        <div class="setting-item" @click="showStoragePath">
+          <div class="setting-info">
+            <div class="setting-label">存储位置</div>
+            <div class="setting-desc storage-path">{{ storagePath }}</div>
+          </div>
+          <div class="setting-action">›</div>
         </div>
         <div class="setting-item" @click="confirmClearAll">
           <div class="setting-info">
@@ -68,11 +75,11 @@
       </div>
     </div>
 
-    <!-- 定时关闭模态框 -->
+    <!-- 定时暂停模态框 -->
     <div v-if="showTimerModal" class="timer-modal" @click="showTimerModal = false">
       <div class="timer-content" @click.stop>
         <div class="timer-header">
-          <h3>定时关闭</h3>
+          <h3>定时暂停</h3>
           <button class="close-btn" @click="showTimerModal = false">✕</button>
         </div>
         
@@ -104,6 +111,32 @@
           >
             取消定时
           </button>
+
+          <!-- 自定义时间输入 -->
+          <div v-if="showCustomInput" class="custom-input-section">
+            <div class="custom-input-header">
+              <h4>自定义时间</h4>
+            </div>
+            <div class="custom-input-body">
+              <input 
+                v-model="customMinutes" 
+                type="number" 
+                placeholder="输入分钟数"
+                class="custom-input"
+                min="1"
+                max="999"
+                @keyup.enter="setCustomTimer"
+              />
+              <div class="custom-input-actions">
+                <button class="custom-cancel-btn" @click="cancelCustomInput">
+                  取消
+                </button>
+                <button class="custom-confirm-btn" @click="setCustomTimer">
+                  确定
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -111,24 +144,77 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '../stores/player'
 import { storage } from '../utils/storage'
 import packageInfo from '../../package.json'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory } from '@capacitor/filesystem'
 
 const playerStore = usePlayerStore()
-const { songs } = storeToRefs(playerStore)
+const { songs, playlist } = storeToRefs(playerStore)
 const { loadSongs, pause } = playerStore
 
 const appVersion = packageInfo.version
 const appName = packageInfo.name
+
+const cachedSongsCount = ref(0)
+const storagePath = ref('加载中...')
+
+// 获取存储路径
+const getStoragePath = async () => {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      // 原生平台：显示实际文件路径
+      const result = await Filesystem.getUri({
+        path: 'music',
+        directory: Directory.Data
+      })
+      storagePath.value = result.uri.replace('file://', '')
+    } else {
+      // 浏览器：显示 IndexedDB
+      storagePath.value = 'IndexedDB (浏览器本地存储)'
+    }
+  } catch (error) {
+    console.error('获取存储路径失败:', error)
+    storagePath.value = '无法获取路径'
+  }
+}
+
+// 获取已缓存歌曲数量
+const getCachedSongsCount = async () => {
+  try {
+    const allMeta = await storage.getAllMeta()
+    cachedSongsCount.value = allMeta.length
+  } catch (error) {
+    console.error('获取缓存歌曲数量失败:', error)
+    cachedSongsCount.value = 0
+  }
+}
+
+// 显示存储路径（复制到剪贴板）
+const showStoragePath = () => {
+  if (navigator.clipboard && storagePath.value !== '加载中...') {
+    navigator.clipboard.writeText(storagePath.value)
+      .then(() => {
+        alert('存储路径已复制到剪贴板')
+      })
+      .catch(() => {
+        alert(`存储路径：\n${storagePath.value}`)
+      })
+  } else {
+    alert(`存储路径：\n${storagePath.value}`)
+  }
+}
 
 const showTimerModal = ref(false)
 const timerRemaining = ref(0) // 剩余秒数
 const selectedTimer = ref(0)
 const timerInterval = ref(null)
 const timerTimeout = ref(null)
+const showCustomInput = ref(false)
+const customMinutes = ref('')
 
 const timerOptions = [
   { label: '15分钟', value: 15 * 60 },
@@ -136,11 +222,18 @@ const timerOptions = [
   { label: '45分钟', value: 45 * 60 },
   { label: '60分钟', value: 60 * 60 },
   { label: '90分钟', value: 90 * 60 },
-  { label: '120分钟', value: 120 * 60 }
+  { label: '120分钟', value: 120 * 60 },
+  { label: '自定义', value: -1 }
 ]
 
 // 设置定时器
 const setTimer = (seconds) => {
+  // 如果是自定义选项
+  if (seconds === -1) {
+    showCustomInput.value = true
+    return
+  }
+  
   // 取消之前的定时器
   cancelTimer()
   
@@ -151,17 +244,48 @@ const setTimer = (seconds) => {
   const endTime = Date.now() + seconds * 1000
   localStorage.setItem('timerEndTime', endTime.toString())
   
+  console.log('设置定时器:', seconds, '秒，结束时间:', new Date(endTime).toLocaleString())
+  
   // 开始倒计时
   startCountdown()
   
-  // 设置定时关闭
+  // 设置定时暂停
   timerTimeout.value = setTimeout(() => {
-    shutdownApp()
+    console.log('定时器时间到，暂停音乐')
+    pauseMusic()
   }, seconds * 1000)
+  
+  console.log('定时器已设置，timeout ID:', timerTimeout.value)
+}
+
+// 设置自定义时间
+const setCustomTimer = () => {
+  const minutes = parseInt(customMinutes.value)
+  if (isNaN(minutes) || minutes <= 0) {
+    alert('请输入有效的分钟数（大于0）')
+    return
+  }
+  
+  if (minutes > 999) {
+    alert('时间不能超过999分钟')
+    return
+  }
+  
+  showCustomInput.value = false
+  customMinutes.value = ''
+  setTimer(minutes * 60)
+}
+
+// 取消自定义输入
+const cancelCustomInput = () => {
+  showCustomInput.value = false
+  customMinutes.value = ''
 }
 
 // 取消定时器
 const cancelTimer = () => {
+  console.log('取消定时器')
+  
   if (timerInterval.value) {
     clearInterval(timerInterval.value)
     timerInterval.value = null
@@ -179,6 +303,11 @@ const cancelTimer = () => {
 
 // 开始倒计时
 const startCountdown = () => {
+  // 清除旧的倒计时
+  if (timerInterval.value) {
+    clearInterval(timerInterval.value)
+  }
+  
   timerInterval.value = setInterval(() => {
     const endTime = parseInt(localStorage.getItem('timerEndTime') || '0')
     if (!endTime) {
@@ -190,7 +319,8 @@ const startCountdown = () => {
     timerRemaining.value = remaining
     
     if (remaining <= 0) {
-      cancelTimer()
+      console.log('倒计时结束，暂停音乐')
+      pauseMusic()
     }
   }, 1000)
 }
@@ -210,11 +340,18 @@ const formatTimerRemaining = () => {
   }
 }
 
-// 关闭音乐播放
-const shutdownApp = () => {
+// 定时暂停音乐播放
+const pauseMusic = () => {
+  console.log('执行暂停音乐播放')
+  
+  // 暂停播放
   pause()
-  alert('定时关闭时间到，音乐已停止播放')
+  
+  // 取消定时器
   cancelTimer()
+  
+  // 显示提示
+  alert('定时时间到，音乐已暂停播放')
 }
 
 // 恢复定时器状态
@@ -223,14 +360,17 @@ const restoreTimer = () => {
   if (endTime) {
     const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000))
     if (remaining > 0) {
+      console.log('恢复定时器，剩余时间:', remaining, '秒')
       timerRemaining.value = remaining
       startCountdown()
       
       // 重新设置定时关闭
       timerTimeout.value = setTimeout(() => {
-        shutdownApp()
+        console.log('恢复的定时器时间到，暂停音乐')
+        pauseMusic()
       }, remaining * 1000)
     } else {
+      console.log('定时器已过期，清除')
       localStorage.removeItem('timerEndTime')
     }
   }
@@ -250,6 +390,8 @@ const clearAllData = async () => {
 
 onMounted(() => {
   restoreTimer()
+  getStoragePath()
+  getCachedSongsCount()
 })
 
 onUnmounted(() => {
@@ -499,5 +641,87 @@ onUnmounted(() => {
 .cancel-timer-btn:active {
   transform: scale(0.98);
   background: rgba(255, 59, 48, 0.3);
+}
+
+/* 自定义时间输入 */
+.custom-input-section {
+  margin-top: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(204, 255, 0, 0.3);
+}
+
+.custom-input-header {
+  margin-bottom: 16px;
+}
+
+.custom-input-header h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.custom-input-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.custom-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font-size: 16px;
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.custom-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.custom-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.custom-input-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.custom-cancel-btn,
+.custom-confirm-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.custom-cancel-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.custom-cancel-btn:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.custom-confirm-btn {
+  background: var(--primary);
+  color: var(--bg-dark);
+}
+
+.custom-confirm-btn:active {
+  transform: scale(0.98);
+  opacity: 0.9;
 }
 </style>

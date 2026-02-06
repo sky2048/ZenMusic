@@ -176,6 +176,12 @@ const previewSong = async (song) => {
     // 停止之前的试听
     stopPreview()
     
+    // 如果播放列表正在播放音乐，暂停它
+    if (playerStore.isPlaying) {
+      playerStore.pause()
+      console.log('试听开始，已暂停播放列表音乐')
+    }
+    
     // 获取歌曲详情
     const response = await fetch(`${API_BASE}/api/song/${song.id}`)
     const result = await response.json()
@@ -699,11 +705,13 @@ onUnmounted(() => {
 .categories {
   display: flex;
   overflow-x: auto;
-  gap: 10px;
-  padding: 0 20px 20px;
+  gap: 18px;
+  padding: 0 24px 20px 24px;
+  margin-right: 0;
   flex-shrink: 0;
   scrollbar-width: none;
   scroll-behavior: smooth;
+  box-sizing: border-box;
 }
 
 .categories::-webkit-scrollbar {
@@ -711,7 +719,10 @@ onUnmounted(() => {
 }
 
 .category-item {
-  padding: 10px 20px;
+  /* 计算宽度：(100vw - 左右padding 48px - 3个gap 54px) / 4 */
+  min-width: calc((100vw - 48px - 54px) / 4);
+  max-width: calc((100vw - 48px - 54px) / 4);
+  padding: 10px 12px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   font-size: 14px;
@@ -721,6 +732,14 @@ onUnmounted(() => {
   transition: all 0.2s;
   border: 1.5px solid rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 最后一个分类项添加右边距，确保滚动到最后时有足够空间 */
+.category-item:last-child {
+  margin-right: 0;
 }
 
 .category-item.active {
@@ -736,7 +755,7 @@ onUnmounted(() => {
 .song-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px 20px;
+  padding: 0 24px 20px;
 }
 
 .song-item {
