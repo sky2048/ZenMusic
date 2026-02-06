@@ -160,7 +160,7 @@ const previewCurrentTime = ref(0)
 const previewLyrics = ref('')
 const previewDragging = ref(false) // 是否正在拖动进度条
 
-const API_BASE = 'https://music-crawler.sky70old.workers.dev'
+const API_BASE = 'https://music.fydh.de5.net'
 
 // 试听音频事件
 previewAudio.addEventListener('timeupdate', () => {

@@ -286,6 +286,12 @@ export const usePlayerStore = defineStore('player', () => {
       playlist.value.push(song)
       savePlaylist()
       
+      // 如果这是播放列表中的第一首歌，且当前没有播放歌曲，自动设置为当前歌曲
+      if (playlist.value.length === 1 && !currentOnlineSong.value) {
+        currentOnlineSong.value = song
+        lyrics.value = '' // 清空歌词，等播放时再加载
+      }
+      
       // 开始下载到本地
       if (song.musicUrl) {
         downloadSongToLocal(song)

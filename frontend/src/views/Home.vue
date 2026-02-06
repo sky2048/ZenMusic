@@ -357,7 +357,7 @@ const touchStartX = ref(0)
 const touchStartY = ref(0)
 const isSwiping = ref(false)
 
-const API_BASE = 'https://music-crawler.sky70old.workers.dev'
+const API_BASE = 'https://music.fydh.de5.net'
 
 const categories = [
   { id: 'hot', apiId: 'hot-music', name: '热门榜' },
