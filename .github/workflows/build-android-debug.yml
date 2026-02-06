@@ -43,11 +43,67 @@ jobs:
           npx cap add android || echo "Android platform already exists"
           npx cap sync android
 
-      - name: Fix Android Manifest and Network Config
+      - name: Configure Android Network Permissions
         working-directory: frontend
         run: |
-          node fix-android-manifest.js
-          npx cap sync android
+          echo "配置 Android 网络权限..."
+          
+          # 创建 XML 目录
+          mkdir -p android/app/src/main/res/xml
+          
+          # 创建网络安全配置文件
+          cat > android/app/src/main/res/xml/network_security_config.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system" />
+                      <certificates src="user" />
+                  </trust-anchors>
+              </base-config>
+              <domain-config cleartextTrafficPermitted="true">
+                  <domain includeSubdomains="true">music-crawler.sky70old.workers.dev</domain>
+                  <domain includeSubdomains="true">workers.dev</domain>
+                  <domain includeSubdomains="true">www.gequhai.com</domain>
+                  <domain includeSubdomains="true">localhost</domain>
+              </domain-config>
+          </network-security-config>
+          EOF
+          
+          # 修改 AndroidManifest.xml
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          
+          # 添加网络权限（如果不存在）
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+            echo "✅ 添加 INTERNET 权限"
+          fi
+          
+          if ! grep -q "android.permission.ACCESS_NETWORK_STATE" "$MANIFEST"; then
+            sed -i '/<uses-permission android:name="android.permission.INTERNET"/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' "$MANIFEST"
+            echo "✅ 添加 ACCESS_NETWORK_STATE 权限"
+          fi
+          
+          # 添加网络安全配置
+          if ! grep -q "networkSecurityConfig" "$MANIFEST"; then
+            sed -i 's/<application/<application\n        android:networkSecurityConfig="@xml\/network_security_config"/' "$MANIFEST"
+            echo "✅ 添加 networkSecurityConfig"
+          fi
+          
+          # 添加 usesCleartextTraffic
+          if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
+            sed -i 's/<application/<application\n        android:usesCleartextTraffic="true"/' "$MANIFEST"
+            echo "✅ 添加 usesCleartextTraffic"
+          fi
+          
+          echo "✅ Android 网络配置完成"
+          
+          # 显示配置结果
+          echo "=== AndroidManifest.xml 权限部分 ==="
+          grep -A 5 "<manifest" "$MANIFEST" | head -10
+          
+          echo "=== AndroidManifest.xml application 部分 ==="
+          grep -A 3 "<application" "$MANIFEST" | head -10
 
       - name: Grant execute permission for gradlew
         working-directory: frontend/android
