@@ -5,12 +5,13 @@
   "server": {
     "androidScheme": "https",
     "allowNavigation": [
-      "https://music-crawler.sky70old.workers.dev",
-      "https://*.workers.dev",
-      "https://www.gequhai.com"
-    ]
+      "*"
+    ],
+    "cleartext": true
   },
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
   }
 }
