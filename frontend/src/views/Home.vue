@@ -590,6 +590,30 @@ const handleImport = async (e) => {
 // 播放歌曲已移除，现在点击内容卡只会试听
 
 onMounted(() => {
+  console.log('=== Home 组件已挂载 ===')
+  console.log('API_BASE:', API_BASE)
+  console.log('当前分类:', currentCategory.value)
+  
+  // 测试基础网络
+  console.log('测试基础网络...')
+  fetch('https://httpbin.org/get')
+    .then(r => {
+      console.log('✅ httpbin 测试成功，状态:', r.status)
+      return r.json()
+    })
+    .then(d => console.log('✅ httpbin 数据:', d))
+    .catch(e => console.error('❌ httpbin 测试失败:', e))
+  
+  // 测试 API categories
+  console.log('测试 API categories...')
+  fetch(`${API_BASE}/api/rank/categories`)
+    .then(r => {
+      console.log('✅ categories 测试成功，状态:', r.status)
+      return r.json()
+    })
+    .then(d => console.log('✅ categories 数据:', d))
+    .catch(e => console.error('❌ categories 测试失败:', e))
+  
   loadSongs()
   // 默认加载热门榜第1页
   fetchRankData('hot', 1, false)
